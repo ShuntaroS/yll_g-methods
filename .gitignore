@@ -3,5 +3,7 @@
 .RData
 .Ruserdata
 .Rproj.user
+*.Rproj
+create_data.R
 .DS_Store
 renv/library/

@@ -37,7 +37,7 @@ run_known_model_check <- function(seed = 42, n = 40000) {
     data = sim_data,
     B = 0,
     seed = seed,
-    method = character(0),
+    method = "normal",
     show_progress = FALSE,
     id_var = "id",
     time_var = "period",
@@ -52,8 +52,8 @@ run_known_model_check <- function(seed = 42, n = 40000) {
     confounders_baseline = NULL,
     estimand = "ATE",
     use_future = FALSE
-  )$point |>
-    filter(age_start == 50)
+  )$detailed_results |>
+    filter(starting_age == 50)
   
   haz0 <- sapply(0:(max_follow - 1), function(j) plogis(alpha + beta_age * j))
   haz1 <- sapply(0:(max_follow - 1), function(j) plogis(alpha + beta_a + beta_age * j))
@@ -69,8 +69,8 @@ run_known_model_check <- function(seed = 42, n = 40000) {
   bind_cols(est, truth) |>
     mutate(
       abs_err_yll = abs(yll - truth_yll),
-      abs_err_le_m0 = abs(le_m0 - truth_le_m0),
-      abs_err_le_m1 = abs(le_m1 - truth_le_m1)
+      abs_err_le_m0 = abs(le_reference - truth_le_m0),
+      abs_err_le_m1 = abs(le_exposed - truth_le_m1)
     )
 }
 
@@ -110,7 +110,7 @@ run_null_effect_check <- function(seed = 7, n = 40000) {
     data = sim_data,
     B = 0,
     seed = seed,
-    method = character(0),
+    method = "normal",
     show_progress = FALSE,
     id_var = "id",
     time_var = "period",
@@ -125,8 +125,8 @@ run_null_effect_check <- function(seed = 7, n = 40000) {
     confounders_baseline = NULL,
     estimand = "ATE",
     use_future = FALSE
-  )$point |>
-    filter(age_start == 50) |>
+  )$detailed_results |>
+    filter(starting_age == 50) |>
     transmute(abs_yll = abs(yll))
 }
 
