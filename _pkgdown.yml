@@ -1,0 +1,24 @@
+url: https://shuntaros.github.io/yll_g-methods/
+template:
+  bootstrap: 5
+
+reference:
+  - title: Estimation
+    desc: Top-level functions for estimating YLL.
+    contents:
+      - estimate_yll_gformula
+      - estimate_yll_gformula_estimand_wrappers
+      - estimate_yll_gformula_intervention
+      - estimate_yll_gformula_binary_stochastic
+      - estimate_yll_gformula_binary_stochastic_vs_natural
+  - title: Intervention helpers
+    contents:
+      - yll_make_binary_stochastic_intervention
+  - title: Plotting
+    contents:
+      - plot_yll
+      - plot_marginal_survival
+      - plot_conditional_survival
+  - title: Data
+    contents:
+      - yll_toy

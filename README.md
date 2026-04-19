@@ -1,5 +1,10 @@
 # YLLgmethods
 
+<!-- badges: start -->
+[![R-CMD-check](https://github.com/ShuntaroS/yll_g-methods/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ShuntaroS/yll_g-methods/actions/workflows/R-CMD-check.yaml)
+[![pkgdown](https://github.com/ShuntaroS/yll_g-methods/actions/workflows/pkgdown.yaml/badge.svg)](https://github.com/ShuntaroS/yll_g-methods/actions/workflows/pkgdown.yaml)
+<!-- badges: end -->
+
 Years of life lost (YLL) and counterfactual life expectancy under
 user-specified interventions on a binary exposure, estimated with the
 parametric **g-formula** on the attained-age time scale.

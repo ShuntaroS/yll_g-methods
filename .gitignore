@@ -31,3 +31,4 @@ local/
 # Large local-only files (poster, etc.)
 ポスター_*.pdf
 *.pdf
+docs
