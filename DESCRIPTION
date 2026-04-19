@@ -15,7 +15,7 @@ Description: Estimates Years of Life Lost (YLL) and counterfactual life
     confidence intervals and helpers for plotting conditional and marginal
     survival curves.
 License: MIT + file LICENSE
-URL: https://github.com/ShuntaroS/yll_g-methods
+URL: https://github.com/ShuntaroS/yll_g-methods, https://shuntaros.github.io/yll_g-methods/
 BugReports: https://github.com/ShuntaroS/yll_g-methods/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

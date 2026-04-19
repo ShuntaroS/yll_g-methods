@@ -19,6 +19,16 @@ The package supports:
 - Plotting helpers for marginal and conditional survival curves and for
   YLL across starting ages.
 
+## Documentation
+
+Full reference and vignettes are available on the package website:
+
+**<https://shuntaros.github.io/yll_g-methods/>**
+
+- [Function reference](https://shuntaros.github.io/yll_g-methods/reference/index.html)
+- [Getting started](https://shuntaros.github.io/yll_g-methods/articles/getting-started.html)
+- [Generalized interventional effects](https://shuntaros.github.io/yll_g-methods/articles/interventional-effects.html)
+
 ## Installation
 
 The package is currently distributed from GitHub:
