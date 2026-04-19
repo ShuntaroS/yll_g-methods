@@ -13,6 +13,8 @@ Useful links:
 
 - <https://github.com/ShuntaroS/yll_g-methods>
 
+- <https://shuntaros.github.io/yll_g-methods/>
+
 - Report bugs at <https://github.com/ShuntaroS/yll_g-methods/issues>
 
 ## Author
