@@ -1,13 +1,20 @@
-# bootstrap 用 ID を標本抽出する: 個体 ID を復元抽出する。
-# Sample bootstrap IDs: resamples individual IDs with replacement.
+# Draw one bootstrap sample of *individual* IDs (not rows). Resampling at the
+# subject level is essential here because the modelling pipeline treats each
+# subject as a unit and would otherwise underestimate uncertainty by treating
+# correlated person-period rows as independent.
 #' @noRd
 yll_bootstrap_ids <- function(ids) {
   n <- length(ids)
   sample(ids, size = n, replace = TRUE)
 }
 
-# bootstrap データを作る: 重複抽出された個体に新しい ID を振る。
-# Build bootstrap data: assigns fresh IDs to duplicated sampled individuals.
+# Materialise a bootstrap dataset from the resampled ID vector.
+#
+# Naively `left_join`ing on the original ID column would give duplicated rows
+# that the engine would (incorrectly) treat as the same subject. To keep each
+# resampled copy independent we mint a fresh "_repK" suffix per duplicate,
+# then assign that synthetic ID back to the original column so downstream
+# code is none the wiser.
 #' @noRd
 yll_make_boot_data <- function(data, id_var, sampled_ids) {
   id_map <- tibble(
@@ -20,8 +27,11 @@ yll_make_boot_data <- function(data, id_var, sampled_ids) {
     select(-"boot_id")
 }
 
-# パーセンタイル CI を作る: bootstrap 分布から信頼区間を計算する。
-# Compute percentile CIs: derives confidence intervals from bootstrap quantiles.
+# Percentile bootstrap CIs for YLL and both arm-specific LEs.
+#
+# `boot_df` is a long tibble with one row per (bootstrap iteration,
+# starting age). For each starting age we take the requested lower/upper
+# quantiles of the bootstrap distribution.
 #' @noRd
 yll_ci_percentile <- function(boot_df, conf_level) {
   alpha <- (1 - conf_level) / 2
@@ -38,8 +48,12 @@ yll_ci_percentile <- function(boot_df, conf_level) {
     )
 }
 
-# 正規近似 CI を作る: bootstrap 標準誤差から信頼区間を計算する。
-# Compute normal-approximation CIs: derives confidence intervals from bootstrap SEs.
+# Wald-type ("normal-approximation") bootstrap CIs.
+#
+# Standard errors come from the bootstrap distribution; the interval is
+# point_est ± z_{1-alpha/2} * SE_boot. This is symmetric around the point
+# estimate and is the right choice when the sampling distribution is roughly
+# normal — fast to compute and well-behaved at moderate B.
 #' @noRd
 yll_ci_normal <- function(point_est, boot_df, conf_level) {
   alpha <- (1 - conf_level) / 2
@@ -68,8 +82,17 @@ yll_ci_normal <- function(point_est, boot_df, conf_level) {
     )
 }
 
-# 読みやすい列名に直す: 結果テーブルを用途別に分かりやすい名前へ変換する。
-# Make result tables readable: renames output columns to more descriptive names.
+# Rename the internal column names (`yll_lwr_perc`, `se_yll_norm`, etc.) into
+# more readable user-facing labels for the result object's `detailed_results`
+# table, and assemble the trimmed `summary` table whose `ci_low` / `ci_high`
+# columns reflect the user's chosen `method`.
+#
+# Two tables are returned:
+#   * `detailed_results` — every CI / SE column under both methods; useful for
+#     downstream analysis and sanity checks.
+#   * `summary`          — one row per starting age with point estimate, the
+#     requested CI, and the CI method tag. This is what most users actually
+#     read.
 #' @noRd
 yll_make_readable_results <- function(point_est, boot_df, summary_df, method) {
   detailed_results <- summary_df |>
@@ -95,6 +118,8 @@ yll_make_readable_results <- function(point_est, boot_df, summary_df, method) {
     rename_with(~ sub("^le_m1_lwr_norm$", "le_exposed_ci_low_normal", .x)) |>
     rename_with(~ sub("^le_m1_upr_norm$", "le_exposed_ci_high_normal", .x))
 
+  # Default to NA bounds; the branches below fill them in with whichever CI
+  # method the user requested.
   main_results <- detailed_results |>
     select(starting_age, yll) |>
     mutate(
@@ -131,8 +156,13 @@ yll_make_readable_results <- function(point_est, boot_df, summary_df, method) {
   )
 }
 
-# 結果オブジェクトを作る: 主結果・詳細表・設定情報を返す。
-# Build result object: returns the main table, detailed results, and metadata.
+# Assemble the final result list returned to the user.
+#
+# Returning a structured list (instead of dropping a single tibble back) lets
+# us carry the run metadata, both summaries, and the marginal survival curves
+# needed by the plotting helpers. Plot helpers pick up
+# `marginal_survival_point` / `marginal_survival_boot`; downstream analyses
+# typically read `summary` and `detailed_results`.
 #' @noRd
 yll_build_result_object <- function(point_est, boot_df, summary_df, meta, method,
                                     marginal_survival_point = NULL,
@@ -148,8 +178,9 @@ yll_build_result_object <- function(point_est, boot_df, summary_df, meta, method
   )
 }
 
-# bootstrap 反復の marginal curves を集める: 各反復の周辺生存曲線を縦結合する。
-# Collect bootstrap marginal curves: row-binds per-iteration marginal survival tables.
+# Stack the per-iteration marginal survival curves into one long tibble
+# (with a `b` column identifying the iteration). NULL-safe and length-safe so
+# that bootstrap loops with degenerate iterations don't blow up.
 #' @noRd
 yll_collect_bootstrap_curves <- function(boot_results) {
   curves <- lapply(boot_results, `[[`, "curves")
@@ -158,8 +189,13 @@ yll_collect_bootstrap_curves <- function(boot_results) {
   bind_rows(curves)
 }
 
-# 1 回の bootstrap 結果を整える: yll tibble と marginal curves を分離して返す。
-# Wrap one bootstrap iteration: returns yll tibble and marginal curves separately.
+# Package one bootstrap iteration's outputs into the shape the parent loop
+# expects: a list with the YLL tibble (tagged with iteration index `b`) and
+# the iteration's marginal survival curves (also tagged with `b`).
+#
+# The marginal curves come back as an attribute on the YLL tibble so the
+# inner engine can return them without changing its return type; here is
+# where we promote them into a proper top-level element.
 #' @noRd
 yll_one_boot_result <- function(yll_tibble, b) {
   curves <- attr(yll_tibble, "marginal_curves")

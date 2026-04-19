@@ -216,8 +216,21 @@ estimate_yll_gformula <- function(
   )
 }
 
-# bootstrap 反復を実行する: 並列・プログレスバーを切り替えて one_boot を B 回回す。
-# Run bootstrap iterations: dispatches one_boot B times with optional parallelism / progress.
+# Run the B bootstrap iterations, picking the right dispatch backend based on
+# the user's preferences.
+#
+# Four code paths, one per (use_future, show_progress) combination:
+#
+#   * use_future + progress: `future_lapply` driven by a `progressr`
+#     progressor; works correctly across multisession workers because the
+#     handler is registered globally before the call.
+#   * use_future, no progress: plain `future_lapply`.
+#   * sequential + progress: classic `txtProgressBar` updated inside `lapply`.
+#   * sequential, no progress: plain `lapply`.
+#
+# `future.seed = TRUE` is set on every parallel path so each worker gets a
+# distinct, reproducible RNG stream — critical because each iteration draws a
+# fresh subject-level resample.
 #' @noRd
 yll_run_bootstrap <- function(B, one_boot, use_future, show_progress) {
   if (use_future) {

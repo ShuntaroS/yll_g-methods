@@ -1,5 +1,7 @@
-# 必須列を確認する: 指定された変数名が `data` に存在するか検査する。
-# Check required columns: verifies that requested variables exist in `data`.
+# Check that every variable referenced by the user-facing API is actually
+# present in `data`. Failing fast here gives a much clearer error message than
+# the cryptic `object 'foo' not found` that would otherwise come from inside
+# the modelling pipeline.
 #' @noRd
 yll_check_required_columns <- function(data, vars) {
   missing_vars <- setdiff(unique(vars), names(data))
@@ -12,8 +14,20 @@ yll_check_required_columns <- function(data, vars) {
   }
 }
 
-# entry age が baseline confounders に含まれていないか確認する: attained age を時間軸とする際の重複モデリングと反実仮想予測時の外挿（age_temp < age_at_entry）を警告する。
-# Warn if entry age is in baseline confounders: prevents redundant modelling on the attained-age time scale and extrapolation when predicting counterfactual hazards at age_temp < age_at_entry.
+# Warn the user if they passed the entry-age column inside
+# `confounders_baseline`. The hazard model already includes a flexible spline
+# in attained age (= entry age + time-on-study), so adding entry age as a
+# baseline confounder usually causes two problems:
+#
+#   (i) it splits the age effect into a redundant entry-age term and a hidden
+#       time-on-study term, which makes the contrast harder to interpret; and
+#  (ii) it forces the hazard model to extrapolate when we predict
+#       counterfactual hazards at age_temp < entry age (the counterfactual
+#       expansion creates rows for every age in [age_start, age_end] for every
+#       subject, including ages before they actually entered the study).
+#
+# We only warn rather than error, because the user may genuinely want a
+# cohort / time-on-study effect.
 #' @noRd
 yll_warn_entry_age_in_confounders <- function(age_at_entry_var, confounders_baseline) {
   if (is.null(confounders_baseline) || length(confounders_baseline) == 0) {
@@ -34,8 +48,18 @@ yll_warn_entry_age_in_confounders <- function(age_at_entry_var, confounders_base
   invisible(NULL)
 }
 
-# 二値曝露のレベルを決める: 参照群と曝露群の値を確定する。
-# Resolve binary exposure levels: determines reference and exposed values.
+# Decide which observed value is the "reference" level (= unexposed) and which
+# is the "exposed" level for a binary exposure column.
+#
+# Behaviour:
+#   * If the user supplies both `reference_level` and `exposed_level` we just
+#     validate them.
+#   * If either is NULL we infer them: for a factor we use the natural
+#     `levels()` order; for a non-factor we use the order of unique observed
+#     values. The first becomes the reference, the second the exposed.
+#
+# The package currently only supports binary exposures, so anything other than
+# exactly two distinct non-NA values is an error.
 #' @noRd
 yll_resolve_binary_levels <- function(x, reference_level = NULL, exposed_level = NULL) {
   observed <- unique(x[!is.na(x)])

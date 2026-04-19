@@ -1,5 +1,16 @@
-# 対象集団ルールを作る: ATT/ATC/ATE を logical な選択規則へ変換する。
-# Build population rule: converts ATT/ATC/ATE into a logical selection rule.
+# Translate one of the three named estimands (ATE / ATT / ATC) into a
+# population-selection rule used at averaging time.
+#
+#   * ATE: average over the entire counterfactual population => no rule.
+#   * ATT: average only over subjects whose *observed* exposure was the
+#          exposed level (treatment effect on the treated).
+#   * ATC: average only over subjects whose *observed* exposure was the
+#          reference level (treatment effect on the controls).
+#
+# Note that this rule is applied *after* counterfactual survival curves have
+# been built for everyone — never to subset the model-fitting data. That
+# matters: the hazard model is always fit on the full sample, and the
+# estimand only changes which subjects' counterfactual contrasts we average.
 #' @noRd
 yll_make_population_rule_from_estimand <- function(estimand, reference_level, exposed_level) {
   if (identical(estimand, "ATE")) {
@@ -17,8 +28,13 @@ yll_make_population_rule_from_estimand <- function(estimand, reference_level, ex
   stop("estimand must be one of 'ATT', 'ATC', or 'ATE'.", call. = FALSE)
 }
 
-# 対象集団を解決する: 平均化の対象となる個体を logical ベクトルで返す。
-# Resolve target population: returns a logical index for the population to average over.
+# Resolve a target-population specification into the logical row-mask that
+# the engine will use to subset the counterfactual data before averaging.
+#
+# `target_population` may be either a logical vector (already pre-computed)
+# or a function `f(data)` returning a logical vector. We validate length and
+# the absence of NAs because silently dropping rows here would change the
+# estimand without warning.
 #' @noRd
 yll_resolve_population_index <- function(data, target_population = NULL) {
   if (is.null(target_population)) {
@@ -40,8 +56,19 @@ yll_resolve_population_index <- function(data, target_population = NULL) {
   idx
 }
 
-# 介入確率を解決する: 各個体の `A*=1` の確率へ介入指定を変換する。
-# Resolve intervention probabilities: converts an intervention specification into subject-specific probabilities of exposure.
+# Convert a user-supplied `intervention_*` argument into a numeric vector of
+# subject-specific exposure probabilities `P(A* = exposed)`. The accepted
+# input forms are:
+#
+#   * numeric scalar in [0, 1] — same probability for everyone (broadcast).
+#   * numeric vector of length nrow(data) — already subject-specific.
+#   * logical scalar/vector — coerced via `as.numeric`.
+#   * a value matching one of the two exposure levels — interpreted as a
+#     deterministic intervention assigning that level to everyone.
+#   * a function `f(data)` returning any of the above.
+#
+# The returned vector is what the engine multiplies the per-arm survival
+# curves by to form the marginal mixture S^* = (1 - p) * S_ref + p * S_exp.
 #' @noRd
 yll_resolve_exposed_probability <- function(data, intervention, reference_level, exposed_level) {
   assigned <- if (is.function(intervention)) intervention(data) else intervention

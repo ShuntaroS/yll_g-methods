@@ -1,5 +1,13 @@
-# bootstrap 上の条件付き生存曲線を組み立てる: 各反復について S_b(y)/S_b(a_start) を再計算する。
-# Reconstruct conditional survival from bootstrap: recomputes S_b(y)/S_b(a_start) per iteration.
+# Reconstruct the per-iteration conditional survival curves from the stack of
+# bootstrap marginal curves.
+#
+# `marginal_survival_boot` is a long tibble with one row per (iteration `b`,
+# age) and the two marginal arms `surv0`/`surv1`. For each iteration we slice
+# out that iteration's curve, condition it on survival to `age_start`
+# (i.e. divide by S_b(a_start)), and tag the result with `b` so callers can
+# compute pointwise quantiles across iterations. NULL-safe so degenerate
+# iterations (e.g. S_b(a_start) = 0) are silently dropped instead of poisoning
+# the downstream summaries.
 #' @noRd
 yll_bootstrap_conditional_curves <- function(marginal_survival_boot, age_start) {
   if (is.null(marginal_survival_boot) || nrow(marginal_survival_boot) == 0) {
@@ -19,8 +27,16 @@ yll_bootstrap_conditional_curves <- function(marginal_survival_boot, age_start) 
   bind_rows(out_list)
 }
 
-# 条件付き生存曲線を作る (信頼区間つき): 点推定と bootstrap 曲線から age_start 起点の条件付き生存と pointwise CI を返す。
-# Build conditional survival curves with CI: returns conditional survival from age_start with pointwise CI computed from bootstrap.
+# Build the conditional-survival table the plotting helper consumes.
+#
+# Combines:
+#   * the point estimate `S(y | a_start)` for each arm (computed from the
+#     point-estimate marginal curves), and
+#   * pointwise confidence bounds at every age, taken as the lower/upper
+#     `(1 - conf_level)/2` quantiles of the bootstrap conditional curves.
+#
+# When no bootstrap curves are available (e.g. `B = 0`) we return just the
+# point estimate columns, and the calling plot function will skip the ribbon.
 #' @noRd
 yll_conditional_curves_with_ci <- function(marginal_survival_point,
                                            marginal_survival_boot,
@@ -59,8 +75,12 @@ yll_conditional_curves_with_ci <- function(marginal_survival_point,
   out
 }
 
-# 周辺生存曲線を作る (信頼区間つき): 集団 marginal な S(t) を pointwise CI 付きで返す。
-# Build marginal survival curves with CI: returns the population-level marginal S(t) with pointwise CI.
+# Build the marginal-survival table for `plot_marginal_survival()`.
+#
+# Mirrors `yll_conditional_curves_with_ci()` but on the *unconditional*
+# population-marginal curves S(t) — i.e. before conditioning on survival to
+# any chosen starting age. Pointwise CI bounds at each age are again the
+# lower/upper `(1 - conf_level)/2` quantiles across bootstrap iterations.
 #' @noRd
 yll_marginal_curves_with_ci <- function(marginal_survival_point,
                                         marginal_survival_boot,

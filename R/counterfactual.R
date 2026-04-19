@@ -1,5 +1,18 @@
-# 反実仮想データを展開する: 各個体について `age_temp_start..age_temp_end` の予測用行を作る。
-# Expand counterfactual data: creates one prediction row per individual for each age in `age_temp_start..age_temp_end`.
+# Build the prediction grid used by the counterfactual step. For every
+# subject we generate one row per integer age in [age_temp_start,
+# age_temp_end]; the hazard model will then be evaluated at each of these
+# rows under both intervention arms.
+#
+# We deliberately *do not* expand the full lifetime: shrinking the grid to
+# [age_start, age_end] is mathematically harmless because the conditional
+# survival S(y | a_start) cancels every hazard at ages below a_start, and it
+# (a) cuts compute proportionally and (b) avoids extrapolating the hazard
+# model into ages outside the support of the data.
+#
+# `expo_original` preserves the *observed* exposure status (used downstream
+# by ATT/ATC selection rules and stochastic interventions); `expo` is set to
+# the original value here and will be overwritten by the engine when it
+# evaluates the two arms.
 #' @noRd
 yll_expand_counterfactual_data <- function(
     data,
@@ -24,8 +37,16 @@ yll_expand_counterfactual_data <- function(
   out
 }
 
-# 個体別生存を作る: 参照曝露と曝露群の下での生存曲線を個体ごとに計算する。
-# Build individual survival curves: computes per-subject survival under the reference and exposed levels.
+# Convert per-interval hazards into per-subject survival curves under the two
+# intervention arms.
+#
+# Discrete-time identity:
+#   S(t) = prod_{u < t} (1 - h(u))
+#
+# In code: `cumprod(1 - hazard)` gives S(t+1) at row t (survival *after* the
+# interval ends). To recover S(t) — survival *at the start* of the interval,
+# which is what the integration step expects — we lag by one and seed the
+# first interval at S = 1.
 #' @noRd
 yll_compute_individual_survival_curves <- function(df, id_var,
                                                    hazard0_var = "hazard0",
@@ -42,8 +63,17 @@ yll_compute_individual_survival_curves <- function(df, id_var,
     ungroup()
 }
 
-# 介入下の平均生存を作る: 個体別の曝露確率で2本の生存曲線を混合して平均する。
-# Build intervention survival: mixes the two survival curves using subject-specific exposure probabilities.
+# Aggregate the two per-subject survival curves into a single population-
+# marginal survival curve under a *stochastic* intervention.
+#
+# For each subject the intervention specifies P(A* = exposed) = `p_exposed`,
+# so their counterfactual survival mixes the two arms:
+#
+#   S_i^*(t) = (1 - p_i) * S_i^{A=ref}(t) + p_i * S_i^{A=exp}(t)
+#
+# We then average the per-subject mixture across subjects within each age to
+# get the marginal curve. Determinstic interventions are just the special
+# case `p_i in {0, 1}`.
 #' @noRd
 yll_mean_survival_under_intervention <- function(df, p_exposed, surv_name = "surv") {
   if (length(p_exposed) != nrow(df)) {
@@ -59,8 +89,10 @@ yll_mean_survival_under_intervention <- function(df, p_exposed, surv_name = "sur
     summarise(!!surv_name := mean(.surv_mix), .groups = "drop")
 }
 
-# 年齢別平均生存を作る: 個体ごとの生存を計算し、各年齢で平均する。
-# Average survival by age: computes individual survival and averages it at each age.
+# Same lag-by-one cumulative-product as `yll_compute_individual_survival_curves`
+# but for a *single* hazard column, then averaged across subjects at each age.
+# Used by helpers that need a single observed-distribution survival curve
+# rather than the two intervention arms.
 #' @noRd
 yll_mean_survival_by_age <- function(df, id_var, hazard_var, surv_name = "surv") {
   df |>
@@ -75,8 +107,13 @@ yll_mean_survival_by_age <- function(df, id_var, hazard_var, surv_name = "surv")
     summarise(!!surv_name := mean(.surv_at_age), .groups = "drop")
 }
 
-# 条件付き生存を作る: 開始年齢で標準化した生存曲線に変換する。
-# Build conditional survival: rescales survival curves to start at a chosen age.
+# Convert a marginal survival curve S(t) into the *conditional* survival
+# curve given survival to a chosen starting age:
+#
+#   S(t | a_start) = S(t) / S(a_start) for t >= a_start.
+#
+# Returning NULL when S(a_start) is zero (or absent) lets the caller skip
+# starting ages where the curve is undefined, instead of producing NaNs.
 #' @noRd
 yll_conditional_survival_from_age <- function(g_surv_data, a_start) {
   s0 <- g_surv_data[["surv0"]][g_surv_data$age_temp == a_start]
@@ -94,13 +131,27 @@ yll_conditional_survival_from_age <- function(g_surv_data, a_start) {
     )
 }
 
-# 余命を積分する: 条件付き生存曲線の面積から LE を計算する。
-# Integrate life expectancy: computes LE as the area under the conditional survival curve.
-# `integration` selects the discretisation rule:
-#   - "left_rectangle": sum_i (a_{i+1} - a_i) * S(a_i). 各区間の開始時点の生存をその区間の代表値とする。
-#     離散時間 hazard モデルの自然な対応で、デフォルトはこちら。
-#   - "trapezoidal":    sum_i (a_{i+1} - a_i) * (S(a_i) + S(a_{i+1})) / 2.
-#     生存曲線を区間内で線形補間した近似で、滑らかな曲線では精度がやや高い。
+# Numerically integrate a conditional survival curve to get residual life
+# expectancy (LE = area under the curve).
+#
+# Two discretisation rules are supported:
+#
+#   * "left_rectangle" (default):
+#       LE ≈ sum_i (a_{i+1} - a_i) * S(a_i)
+#     i.e. the survival at the *start* of each interval represents the whole
+#     interval. This is the natural companion to the discrete-time hazard
+#     model, where S(a) is interpreted as survival up to the start of
+#     interval [a, a+1).
+#
+#   * "trapezoidal":
+#       LE ≈ sum_i (a_{i+1} - a_i) * (S(a_i) + S(a_{i+1})) / 2
+#     i.e. linearly interpolate the survival curve within each interval.
+#     This is slightly more accurate when the curve is smooth but mixes a
+#     continuous-time intuition into a discrete-time model.
+#
+# A length-<=1 `age` vector is treated as zero area, which conveniently makes
+# the function safe to call on degenerate cases without special-casing them
+# at the call site.
 #' @noRd
 yll_integrate_le <- function(age, surv,
                              integration = c("left_rectangle", "trapezoidal")) {

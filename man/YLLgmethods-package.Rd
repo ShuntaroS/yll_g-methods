@@ -17,6 +17,7 @@ curves.
 Useful links:
 \itemize{
   \item \url{https://github.com/ShuntaroS/yll_g-methods}
+  \item \url{https://shuntaros.github.io/yll_g-methods/}
   \item Report bugs at \url{https://github.com/ShuntaroS/yll_g-methods/issues}
 }
 
