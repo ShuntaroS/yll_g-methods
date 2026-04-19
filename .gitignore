@@ -1,0 +1,33 @@
+# RStudio
+.Rproj.user/
+.Rhistory
+.Rapp.history
+.RData
+.Ruserdata
+
+# OS
+.DS_Store
+Thumbs.db
+
+# R package build artifacts
+*.tar.gz
+*.tgz
+*.Rcheck/
+src/*.o
+src/*.so
+src/*.dll
+
+# Documentation site
+docs/
+
+# Editor/Claude
+.claude/
+.vscode/
+.idea/
+
+# Local-only working files (legacy monolith, demo, scratch)
+local/
+
+# Large local-only files (poster, etc.)
+ポスター_*.pdf
+*.pdf

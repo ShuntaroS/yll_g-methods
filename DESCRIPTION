@@ -1,0 +1,45 @@
+Package: YLLgmethods
+Title: Years of Life Lost via the G-Formula
+Version: 0.0.0.9000
+Authors@R:
+    person(
+      "Shuntaro", "Sato",
+      email   = "shuntaro.sato.stat@gmail.com",
+      role    = c("aut", "cre"),
+      comment = c(ORCID = "0000-0002-6055-3649")
+    )
+Description: Estimates Years of Life Lost (YLL) and counterfactual life
+    expectancy under user-specified interventions on a binary exposure using
+    the parametric g-formula on the attained-age time scale. Supports ATE,
+    ATT, ATC, and stochastic / population interventions, with bootstrap
+    confidence intervals and helpers for plotting conditional and marginal
+    survival curves.
+License: MIT + file LICENSE
+URL: https://github.com/ShuntaroS/yll_g-methods
+BugReports: https://github.com/ShuntaroS/yll_g-methods/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends:
+    R (>= 4.1)
+Imports:
+    dplyr,
+    tibble,
+    tidyr,
+    rlang,
+    purrr,
+    stats,
+    utils,
+    survival,
+    Epi,
+    future.apply,
+    progressr
+Suggests:
+    ggplot2,
+    future,
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+Config/testthat/edition: 3
+LazyData: true
+VignetteBuilder: knitr
