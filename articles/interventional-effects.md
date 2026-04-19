@@ -1,0 +1,133 @@
+# Generalized interventional effects with YLLgmethods
+
+This vignette explains how `YLLgmethods` represents general
+**interventional effects** — including stochastic and dynamic regimes —
+and how that maps onto the package API.
+
+## 1. From static interventions to a more general framework
+
+The classical average treatment effect (ATE) compares two **static**
+worlds, e.g. *everyone non-smoker* vs. *everyone current smoker*:
+
+$${ATE} = E\left\lbrack Y^{a = 1} \right\rbrack - E\left\lbrack Y^{a = 0} \right\rbrack.$$
+
+This is conceptually clean but often unrealistic. **Generalized
+interventional effects** instead define an effect over a *class* of
+interventions — typically by specifying a stochastic assignment
+distribution $g(a \mid L)$ and contrasting two such distributions:
+
+$$E\left\lbrack Y^{g_{1}} \right\rbrack - E\left\lbrack Y^{g_{0}} \right\rbrack.$$
+
+The g-formula identifies these as
+
+$$E\left\lbrack Y^{g} \right\rbrack = E_{L}\!\left\lbrack \,\sum\limits_{a}E\lbrack Y \mid A = a,L\rbrack\, g(a \mid L) \right\rbrack.$$
+
+## 2. What changes for binary exposures
+
+Suppose the observed exposure is binary,
+$A \in \{\text{reference},\text{exposed}\}$, and we want to contrast:
+
+- **Target intervention.** “Among those who were observed unexposed, 20%
+  become exposed; among those observed exposed, all stay exposed.”
+- **Reference intervention.** Some other shift (or the natural exposure
+  distribution).
+
+For each subject the g-formula needs only
+$P\left( A^{*} = \text{exposed} \mid A,L \right)$ under the two regimes.
+`YLLgmethods` exposes this through:
+
+- [`yll_make_binary_stochastic_intervention()`](https://shuntaros.github.io/yll_g-methods/reference/yll_make_binary_stochastic_intervention.md)
+  — builds a function `f(data)` returning subject-specific exposure
+  probabilities, indexed by the subject’s *originally observed* exposure
+  status.
+- [`estimate_yll_gformula_intervention()`](https://shuntaros.github.io/yll_g-methods/reference/estimate_yll_gformula_intervention.md)
+  — takes `intervention_reference` and `intervention_exposed`, each
+  either a scalar probability, a vector of probabilities, an
+  exposure-level label, or a function built with the helper above.
+- [`estimate_yll_gformula_binary_stochastic()`](https://shuntaros.github.io/yll_g-methods/reference/estimate_yll_gformula_binary_stochastic.md)
+  and `..._binary_stochastic_vs_natural()` — convenience wrappers around
+  the most common binary-exposure shifts.
+
+## 3. Worked example: shifting hypertension prevalence
+
+Imagine a public-health programme that would, if applied uniformly to
+the unexposed group, expose 20% of them and keep all observed-exposed
+subjects exposed. We compare it to the **natural** exposure distribution
+that produced the observed data.
+
+``` r
+library(YLLgmethods)
+data(yll_toy)
+
+res <- estimate_yll_gformula_binary_stochastic_vs_natural(
+  data = yll_toy,
+  prob_exposed_if_unexposed = 0.20,
+  prob_exposed_if_exposed   = 1.00,
+  target_population = NULL,        # average over the entire population
+  B = 50, show_progress = FALSE, use_future = FALSE,
+  id_var = "id", time_var = "period", event_var = "event",
+  exposure_var = "hypertension",
+  reference_level = "No", exposed_level = "Yes",
+  age_at_entry_var = "age",
+  age_start = 50, age_end = 90, age_interval = 5,
+  confounders_baseline = c("sex", "education_years", "bmi", "smoke_binary")
+)
+
+res$summary
+```
+
+The “natural” intervention reuses the empirical exposure assignments, so
+subjects observed as `Yes` get $P\left( A^{*} = \text{Yes} \right) = 1$
+and those observed as `No` get $0$. Internally this is just a degenerate
+stochastic intervention — exactly the same machinery.
+
+## 4. Custom regimes
+
+For arbitrary regimes (covariate-dependent assignment, dynamic rules,
+shift-based interventions, …), pass a function directly to
+[`estimate_yll_gformula_intervention()`](https://shuntaros.github.io/yll_g-methods/reference/estimate_yll_gformula_intervention.md):
+
+``` r
+intervention_target <- function(data) {
+  # Higher exposure probability for older subjects
+  plogis(-1 + 0.05 * (data$age - 55))
+}
+
+res <- estimate_yll_gformula_intervention(
+  data = yll_toy,
+  intervention_reference = "No",        # natural reference: nobody exposed
+  intervention_exposed   = intervention_target,
+  id_var = "id", time_var = "period", event_var = "event",
+  exposure_var = "hypertension",
+  reference_level = "No", exposed_level = "Yes",
+  age_at_entry_var = "age",
+  age_start = 50, age_end = 90, age_interval = 5,
+  confounders_baseline = c("sex", "education_years", "bmi", "smoke_binary"),
+  B = 0, use_future = FALSE
+)
+```
+
+The `intervention_*` arguments accept:
+
+- a scalar probability in `[0, 1]`,
+- a vector of length `nrow(data)` of probabilities,
+- a value matching one of the observed exposure levels (treated as a
+  degenerate intervention), or
+- a function `f(data)` returning either of the above.
+
+## 5. Identification assumptions
+
+For these estimands to recover the true counterfactual contrast, the
+usual g-formula conditions are required:
+
+- **Consistency** of the counterfactual outcomes under the hypothesised
+  regimes.
+- **Conditional exchangeability** $Y^{a}\bot A \mid L$.
+- **Positivity** of the shifted exposure regimes given the chosen
+  conditioning set.
+- A correctly specified outcome model — here a discrete-time pooled
+  logistic hazard with natural cubic splines on attained age.
+
+Stochastic interventions are particularly attractive when fully static
+regimes are infeasible or violate positivity, because the shifts can be
+designed to stay within the empirical support of the data.
